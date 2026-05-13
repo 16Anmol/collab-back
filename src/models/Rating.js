@@ -5,12 +5,14 @@ const ratingSchema = new mongoose.Schema(
     applicationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Application",
-      required: true,
+      required: false,
+      default: null,
     },
     problemId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Problem",
-      required: true,
+      required: false,
+      default: null,
     },
     // who gave the rating
     reviewerId: {
@@ -35,8 +37,8 @@ const ratingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// One rating per reviewer per application
-ratingSchema.index({ applicationId: 1, reviewerId: 1 }, { unique: true });
+// One rating per reviewer per reviewee
+ratingSchema.index({ reviewerId: 1, revieweeId: 1 }, { unique: true });
 ratingSchema.index({ revieweeId: 1 });
 
 export default mongoose.model("Rating", ratingSchema);

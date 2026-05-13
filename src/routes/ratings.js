@@ -20,14 +20,14 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     const app = await Application.findOne({
       _id: applicationId,
-      status: "accepted",
+      status: { $in: ["accepted", "selected", "finalised", "pending"] },
       $or: [
         { startupUserId: req.user._id },
         { freelancerUserId: req.user._id },
       ],
     });
     if (!app) {
-      return res.status(404).json({ error: "Accepted application not found" });
+      return res.status(404).json({ error: "Application not found or access denied" });
     }
 
     // Determine who is being rated
@@ -71,6 +71,17 @@ router.get("/user/:userId", authMiddleware, async (req, res) => {
   }
 });
 
+// ── Get ratings I have GIVEN ─────────────────────────────────────────────────
+router.get("/given", authMiddleware, async (req, res) => {
+  try {
+    const ratings = await Rating.find({ reviewerId: req.user._id })
+      .sort({ createdAt: -1 })
+      .populate("revieweeId", "fullName avatar role")
+      .lean();
+    res.json({ ratings });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Get my received ratings ───────────────────────────────────────────────────
 router.get("/mine", authMiddleware, async (req, res) => {
   try {
@@ -84,6 +95,40 @@ router.get("/mine", authMiddleware, async (req, res) => {
       : null;
 
     res.json({ ratings, averageRating: avg, totalRatings: ratings.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Submit rating by userId (for collab/chat connections) ────────────────────
+router.post("/by-user", authMiddleware, async (req, res) => {
+  const { revieweeId, rating, comment, context } = req.body;
+  if (!revieweeId || !rating) return res.status(400).json({ error: "revieweeId and rating required" });
+  if (rating < 1 || rating > 5) return res.status(400).json({ error: "Rating must be 1-5" });
+
+  try {
+    const reviewee = await User.findById(revieweeId);
+    if (!reviewee) return res.status(404).json({ error: "User not found" });
+
+    // Check if already rated this person (by context or general)
+    const exists = await Rating.findOne({ reviewerId: req.user._id, revieweeId, applicationId: null });
+    if (exists) {
+      // Update existing direct rating
+      exists.rating = parseInt(rating);
+      exists.comment = comment || "";
+      await exists.save();
+      return res.json(exists);
+    }
+
+    const newRating = await Rating.create({
+      applicationId: null,
+      problemId: null,
+      reviewerId: req.user._id,
+      revieweeId,
+      rating: parseInt(rating),
+      comment: comment || "",
+    });
+    res.status(201).json(newRating);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
